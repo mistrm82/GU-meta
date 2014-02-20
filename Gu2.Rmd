@@ -1,0 +1,143 @@
+GU- Blood Brain Analysis Part II
+========================================================
+
+
+```{r setup, echo=FALSE}
+opts_chunk$set(tidy=TRUE, echo=TRUE, highlight=TRUE, figalign='center', fig.height=9, fig.width=9, out.width='800px', message=FALSE, error=TRUE, warning=FALSE, cache=FALSE)
+
+# Setup report details
+clientname="Ben Andreone"
+clientemail="bandreon4119@gmail.com"
+lablocation="Neurobiology at HMS"
+analystname="Meeta Mistry"
+analystemail="mmistry@hsph.harvard.edu"
+
+```
+
+Array analysis for `r clientname` (`r clientemail`) at `r lablocation`. Contact `r analystname` (`r analystemail`) for additional details. Request from client was:
+  
+> Compare the gene expression levels to those from other endothelial cell microarray data sets published in GEO. Two specific datasets of interest: 1) GSE9202 This study compared expression in E18.5 and adult mouse brain endothelial cells to samples from the rest of the brain 2) GSE35802 This study compared expression in endothelial cells between brain and lung at E14.5, P7.5, and adult. They used a different platform (Agilent 4x44K), but it may be interesting to qualitatively compare their data to our timepoint.
+
+# Bioconductor and R libraries used
+```{r, libraries, echo=TRUE}
+
+library(affy)
+library(arrayQualityMetrics)
+library(RColorBrewer)
+library(simpleaffy)
+library(limma)
+library(pheatmap)
+library(ape)
+library(statmod)
+library(xtable)
+library(plyr)
+library(ggplot2)
+library(gplots)
+library(GEOquery)
+library(data.table)
+```
+
+### Get variables
+- get base directory for analyses
+- specify data and results directories
+- specify column headers used in metadata file
+
+
+```{r variables, echo=TRUE}
+# Setup directory variables
+baseDir <- '.'
+dataDir <- file.path(baseDir, "data")
+metaDir <- file.path(dataDir, "meta")
+resultsDir <- file.path(baseDir, "results")
+#covarsfilename <- 'covdesc.txt'
+```
+
+### Load the expression data
+
+```{r dataimport GEO}
+
+# Load GEO data
+
+# Affymetrix GeneChip Mouse Genome 430 2.0 microarrays. Array data was processed using the Affy and gcrma packages
+gse1 <- getGEO('GSE9202', destdir=file.path(dataDir, 'geo'))
+
+# Agilent 4x44K 
+gse2 <- getGEO('GSE35802', destdir=file.path(dataDir, 'geo'))
+
+eset1 <- as(gse1$GSE9202_series_matrix.txt.gz, "ExpressionSet")
+eset2 <- as(gse2$GSE35802_series_matrix.txt.gz, "ExpressionSet")
+```
+
+```{r metadata extraction, eval=FALSE, echo=FALSE}
+# Extract metadata eset1
+title <- as.character(pData(eset1)$title)
+v <- vapply(title, function(x)as.character(strsplit(x, ",", fixed=TRUE)[[1]]),
+        c("Specimen" = "", "Timept" = "", "Reps" = ""))
+colnames(v) <- rownames(pData(eset1))
+timept <- as.vector(sapply(timept, function(x) strsplit(x, ": ", fixed=T)[[1]][2]))
+pheno1 <- data.frame(t(v))
+write.table(pheno1, file=file.path(metaDir, 'GSE9202.pheno.txt'), sep="\t", quote=F)
+
+# Extract metadata eset2
+title <- as.character(pData(eset2)$title)
+Timept <- as.character(pData(eset2)$characteristics_ch1.1)
+Timept <- as.vector(sapply(Timept, function(x) strsplit(x, ": ", fixed=T)[[1]][2]))
+Specimen  <- as.character(pData(eset2)$characteristics_ch1.2)
+Specimen <- as.vector(sapply(Specimen, function(x) strsplit(x, ": ", fixed=T)[[1]][2]))
+Reps<-rep(1:5, 6)
+# One adult liver/lung replicate was not used as it failed QC
+Reps<-Reps[-length(Reps)]
+
+pheno2<-data.frame(cbind(title, timept, specimen, reps))
+rownames(pheno2) <- rownames(pData(eset2))
+write.table(pheno2, file=file.path(metaDir, 'GSE35802.pheno.txt'), sep="\t", quote=F)
+               
+```
+
+### Load the metadata
+
+```{r import metadata}
+
+meta1 <- read.table(file.path(metaDir, 'GSE9202.pheno.txt'), header=TRUE, sep='\t', na.strings='NULL', row.names=1)
+meta2 <- read.table(file.path(metaDir, 'GSE35802.pheno.txt'), header=TRUE, sep='\t', na.strings='NULL', row.names=1)
+
+pData(eset1) <- meta1
+pData(eset2) <- meta2
+
+```
+
+## QC report
+
+```{r QC_report, echo=TRUE, eval=FALSE}
+ arrayQualityMetrics(expressionset=eset1, intgroup=c('Specimen', 'Timept'),
+                     outdir='./results/report_raw_GSE9202', force=TRUE,  do.logtransform=FALSE)
+
+ arrayQualityMetrics(expressionset=eset2, intgroup=c('Specimen', 'Timept'),
+                     outdir='./results/report_raw_GSE35802', force=TRUE,  do.logtransform=FALSE)
+
+```
+ 
+[ArrayQualityMetrics QC report for GSE9202](./results/report_raw_GSE9202/index.html)
+[ArrayQualityMetrics QC report for GSE35802](./results/report_raw_GSE35802/index.html)
+
+```{r get annotations}
+# Get gene annotations
+gpl1 <- getGEO('GPL1261', destdir=file.path(dataDir, 'geo'))
+gpl2 <- getGEO('GPL7202', destdir=file.path(dataDir, 'geo'))
+
+# Merge in the annotation data
+annot <- Table(gpl)[, c('ID', 'Gene_Symbol', 'Entrez_Gene_ID')]
+
+expression.annot <- merge(ruvclean, annot,
+                          by.x='row.names', by.y='ID', sort=FALSE)
+rownames(expression.annot) <- expression.annot$Row.names
+expression.annot <- expression.annot[, 2:length(colnames(expression.annot))]
+
+```
+
+
+
+
+
+
+
