@@ -27,17 +27,18 @@ library(RColorBrewer)
 library(simpleaffy)
 library(limma)
 library(pheatmap)
-library(ape)
-library(statmod)
 library(xtable)
 library(plyr)
 library(ggplot2)
 library(gplots)
 library(GEOquery)
+library(simpleaffy)
+
 
 # Grab John Hutchinson's convenience functions
 source("http://dl.dropboxusercontent.com/u/4253254/Resources/functions.r")
 source("~/R/scripts/useful functions/roc.R")
+source("~/R/scripts/useful functions/collpaseProbes.R")
 
 ```
 
@@ -70,6 +71,12 @@ gse2 <- getGEO('GSE35802', destdir=file.path(dataDir, 'geo'))
 
 eset1 <- as(gse1$GSE9202_series_matrix.txt.gz, "ExpressionSet")
 eset2 <- as(gse2$GSE35802_series_matrix.txt.gz, "ExpressionSet")
+
+# Gu Dataset
+gu.data <- read.affy('covars.desc', path='data/Gu/', verbose=F)
+eset3 <- call.exprs(gu.data, "rma")
+fData(eset3) <- fData(eset1)
+
 ```
 
 ```{r metadata extraction, eval=FALSE, echo=FALSE}
@@ -113,6 +120,16 @@ pData(eset1) <- meta1
 # Table of attributes
 kable(table(meta1$Timept, meta1$Specimen), format='html')
 mosaicplot(table(meta1$Timept, meta1$Specimen), main='Categorial variables')
+
+```
+
+### Collapse all three datasets to gene level for cross-platform comparison
+```{r collapse, echo=FALSE, eval=FALSE}
+
+collapse.geo1 <-collapseProbes(eset1, "Gene Symbol") 
+collapse.geo2 <- collapseProbes(eset2, "GENE_SYMBOL")
+collapse.gu <- collapseProbes(eset3, "Gene Symbol")
+
 
 ```
 
@@ -308,7 +325,7 @@ roc <- rocRanked(gu.reanlaysis$Gene.Symbol, ordered)
 
 ```
 
-### Intersecting all three datasets
+### Intersecting all three datasets (at the gene level)
 
 ```{r intersection, echo=FALSE}
 

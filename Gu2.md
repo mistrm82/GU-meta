@@ -301,7 +301,7 @@ Since GSE35802 was run on the Agilent platform we have to first collapse probes 
 <img src="figure/get_annotations1.png" title="plot of chunk get annotations" alt="plot of chunk get annotations" width="800px" /><img src="figure/get_annotations2.png" title="plot of chunk get annotations" alt="plot of chunk get annotations" width="800px" />
 
 
-### Intersecting all three datasets
+### Intersecting all three datasets (at the gene level)
 
 <img src="figure/intersection.png" title="plot of chunk intersection" alt="plot of chunk intersection" width="800px" />
 
