@@ -38,8 +38,6 @@ library(simpleaffy)
 # Grab John Hutchinson's convenience functions
 source("http://dl.dropboxusercontent.com/u/4253254/Resources/functions.r")
 source("~/R/scripts/useful functions/roc.R")
-source("~/R/scripts/useful functions/collpaseProbes.R")
-
 ```
 
 ### Get variables
@@ -54,12 +52,11 @@ baseDir <- '.'
 dataDir <- file.path(baseDir, "data")
 metaDir <- file.path(dataDir, "meta")
 resultsDir <- file.path(baseDir, "results")
-#covarsfilename <- 'covdesc.txt'
 ```
 
 ### Load the expression data
 
-```{r dataimport GEO}
+```{r dataimport GEO, echo=TRUE}
 
 # Load GEO data
 
@@ -105,10 +102,6 @@ write.table(pheno2, file=file.path(metaDir, 'GSE35802.pheno.txt'), sep="\t", quo
                
 ```
 
-## GSE9202
-
-> Array data was processed using the Affy and gcrma packages in the Bioconductor project. Student t test was used to evaluate differential expression. The false discovery rate method was used to perform multiple test correction for probability values.The log2 change was calculated as the log2 of the average expression difference between E18.5 microvessels and “rest-of-brain” tissue or adult brain microvessels.
-
 
 ### Load the metadata: GSE9202
 
@@ -123,15 +116,52 @@ mosaicplot(table(meta1$Timept, meta1$Specimen), main='Categorial variables')
 
 ```
 
-### Collapse all three datasets to gene level for cross-platform comparison
+
+### Load the metadata: GSE35802
+```{r import metadata2, results='asis'}
+
+meta2 <- read.table(file.path(metaDir, 'GSE35802.pheno.txt'), header=TRUE, sep='\t', na.strings='NULL', row.names=1)
+pData(eset2) <- meta2
+
+# Table of attributes
+kable(table(meta2$Timept, meta2$Specimen), format='html')
+mosaicplot(table(meta2$Timept, meta2$Specimen), main='Categorial variables')
+
+```
+
+### Collapse all three datasets to gene-level for cross-platform comparison: FOR GENE-LEVEL COMPARISON (option 1)
 ```{r collapse, echo=FALSE, eval=FALSE}
+
+source("~/R/scripts/useful functions/collpaseProbes.R")
 
 collapse.geo1 <-collapseProbes(eset1, "Gene Symbol") 
 collapse.geo2 <- collapseProbes(eset2, "GENE_SYMBOL")
 collapse.gu <- collapseProbes(eset3, "Gene Symbol")
 
+# Use only intersecting set of genes
+igenes <- intersect(row.names(collapse.geo1), row.names(collapse.geo2))
+
+# Keep only genes present in the intersection
+collapse.geo1 <- collapse.geo1[which(rownames(collapse.geo1) %in% igenes), ]
+collapse.geo2 <- collapse.geo2[which(rownames(collapse.geo2) %in% igenes), ]
+collapse.gu <- collapse.gu[which(rownames(collapse.gu) %in% igenes), ]
+
+# Reassign eset objects with collapsed data
+datasets <- c("collapse.geo1", "collapse.geo2", "collapse.gu")
+
+for (d in 1:length(datasets)){
+  
+  eset <- new("ExpressionSet", exprs=as.matrix(get(datasets[d])))
+  pData(eset) <- pData(get(paste0("eset", d)))
+  assign(paste0("eset", d), eset)
+}
 
 ```
+
+## GSE9202
+
+> Array data was processed using the Affy and gcrma packages in the Bioconductor project. Student t test was used to evaluate differential expression. The false discovery rate method was used to perform multiple test correction for probability values.The log2 change was calculated as the log2 of the average expression difference between E18.5 microvessels and “rest-of-brain” tissue or adult brain microvessels.
+
 
 
 ### QC Analysis
@@ -187,26 +217,51 @@ vennDiagram(results)
 ### Cross-reference tissue effects against results from the Gu dataset re-analysis
 The Venn diagram illustrates the number of overlapping signigicant probes between the two datasets. The ROC curve is used to illustrate where the Gu dataset significant probes appear with respect to the ranking of GSE9202 genes (ranked by adjusted p-value).
 
-```{r cross-reference2, echo=FALSE, results='asis'}
+```{r cross-reference1_option1, echo=FALSE, eval=FALSE}
 
-# Load DE genes
-gu.reanlaysis <- read.delim(file.path(dataDir, 'gu_reanalysis.txt'), header=T, sep="\t", row.names=1, as.is=T)
+# FOR GENE-LEVEL COMPARISON eval=TRUE
+mod<-model.matrix(~ -1 + Tissue + SampleNumber, pData(eset3))
+
+# Fit a linear model
+fit<-lmFit(eset3, mod)
+
+# Compute estimated coefficients and standard errors for contrasts
+contrasts <- makeContrasts(TissueCortex-TissueLung, levels=mod)
+fit2<- contrasts.fit(fit, contrasts)
+fit2<-eBayes(fit2)
+
+# Set threshold 
+p.cutoff <- 0.001
+logfc.cutoff <- 2
+
+# Get significant genes
+gene_list<-topTable(fit2, coef=1, number=nrow(exprs(eset3)))
+gene_list$threshold.FDR = as.factor(abs(gene_list$logFC) > logfc.cutoff 
+                                    & gene_list$adj.P.Val < p.cutoff)
+GU <- gene_list
+gu.reanalysis <- GU[which(as.logical(GU$threshold.FDR)), ]
+```
+
+```{r cross-reference1_option2, echo=FALSE, results='asis'}
 
 # Pull out top genes and find the overlap
-g.geo <- rep(0, nrow(gene_list))
-g.geo[which(rownames(gene_list) %in% rownames(top.genes))] <- 1
-g.gu <- rep(0, nrow(gene_list))
-g.gu[which(rownames(gene_list) %in% rownames(gu.reanlaysis))] <- 1
+g.geo <- rep(0, nrow(GSE9202))
+g.geo[which(rownames(GSE9202) %in% rownames(top.genes))] <- 1
+g.gu <- rep(0, nrow(GSE9202))
+
+# If option1 is run, comment the following line
+gu.reanalysis <- read.delim(file.path(dataDir, 'gu_reanalysis.txt'), header=T, sep="\t", row.names=1, as.is=T)
+g.gu[which(rownames(GSE9202) %in% rownames(gu.reanalysis))] <- 1
 
 overlap <- (cbind(as.logical(g.geo), as.logical(g.gu)))
-rownames(overlap) <- rownames(gene_list)
+rownames(overlap) <- rownames(GSE9202)
 colnames(overlap) <- c("GSE9202", "Gu Dataset")
 
 vennDiagram(overlap)
 
 # Use ROC to see where the Gu genes lie within the ranking
-ordered <- gene_list[order(gene_list$adj.P.Val), ]
-roc <- rocRanked(rownames(gu.reanlaysis), ordered)
+ordered <- GSE9202[order(GSE9202$adj.P.Val), ]
+roc <- rocRanked(rownames(gu.reanalysis), ordered)
 
 ```
 
@@ -216,18 +271,6 @@ roc <- rocRanked(rownames(gu.reanlaysis), ordered)
 > GSE35802: A linear model was fit to the filtered data using the limma package from Bioconductor and comparisons
 were analyzed between brain and liver/lung tissue at each developmental stage (embryo, pup, or adult). Criteria for DE was log 2 FC > 1 and adjusted p-value < 0.05 (Benjamini-Hochberg correction). As expected, microarray analysis identified several Wnt/beta-catenin target genes and other previously characterized BBB-marker genes i.e Glut1, P-gp, Meca32, Lef1
 
-
-### Load the metadata: GSE35802
-```{r import metadata2, results='asis'}
-
-meta2 <- read.table(file.path(metaDir, 'GSE35802.pheno.txt'), header=TRUE, sep='\t', na.strings='NULL', row.names=1)
-pData(eset2) <- meta2
-
-# Table of attributes
-kable(table(meta2$Timept, meta2$Specimen), format='html')
-mosaicplot(table(meta2$Timept, meta2$Specimen), main='Categorial variables')
-
-```
 
 ### QC Analysis
 ArrayQualityMetrics QC report for [GSE35802](./results/report_raw_GSE35802/index.html)
@@ -286,7 +329,27 @@ vennDiagram(results)
 ### Cross-reference embryonic effects against results from the Gu dataset re-analysis. 
 Since GSE35802 was run on the Agilent platform we have to first collapse probes to unique genes. For each gene the probe with minimum p-value was retained. The Venn diagram illustrates the number of overlapping signigicant genes between the two datasets. The ROC curve is used to illustrate where the Gu dataset significant genes appear with respect to the ranking of GSE9202 genes (ranked by adjusted p-value).
 
-```{r get annotations, echo=FALSE}
+```{r cross-reference1_option1, echo=FALSE, eval=FALSE, results='asis'}
+
+# Pull out top genes and find the overlap
+g.geo <- rep(0, nrow(GSE35802))
+g.geo[which(rownames(GSE35802) %in% rownames(top.genes))] <- 1
+g.gu <- rep(0, nrow(GSE35802))
+g.gu[which(rownames(GSE35802) %in% rownames(gu.reanalysis))] <- 1
+
+overlap <- (cbind(as.logical(g.geo), as.logical(g.gu)))
+rownames(overlap) <- rownames(GSE35802)
+colnames(overlap) <- c("GSE35802", "Gu Dataset")
+
+vennDiagram(overlap)
+
+# Use ROC to see where the Gu genes lie within the ranking
+ordered <- GSE35802[order(GSE35802$adj.P.Val), ]
+roc <- rocRanked(rownames(gu.reanalysis), ordered)
+
+```
+
+```{r cross-reference2_option2, echo=FALSE, eval=TRUE}
 
 cnames <- c("GeneName", "GeneSymbol", "Entrez")
   
@@ -321,13 +384,13 @@ vennDiagram(overlap)
 # Use ROC to see where the Gu genes lie within the ranking
 ordered <- data.frame(p2g.geo2[,2:3], row.names=p2g.geo2$GeneSymbol)
 ordered <- ordered[order(ordered$adj.P.Val), ]
-roc <- rocRanked(gu.reanlaysis$Gene.Symbol, ordered)
+roc <- rocRanked(gu.reanalysis$Gene.Symbol, ordered)
 
 ```
 
 ### Intersecting all three datasets (at the gene level)
 
-```{r intersection, echo=FALSE}
+```{r intersection_option2, echo=FALSE}
 
 g.geo1 <- rep(0, nrow(p2g.geo2))
 sig <- p2g.geo1$GeneSymbol[which(p2g.geo1$threshold.FDR == "TRUE")]
