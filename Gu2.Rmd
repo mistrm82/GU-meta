@@ -390,6 +390,19 @@ roc <- rocRanked(gu.reanalysis$Gene.Symbol, ordered)
 
 ### Intersecting all three datasets (at the gene level)
 
+```{r intersection_option1, echo=FALSE, eval=FALSE}
+
+g.geo1 <- rep(0, nrow(overlap))
+sig <- rownames(GSE9202)[which(GSE9202$threshold.FDR == "TRUE")]
+g.geo1[which(rownames(overlap) %in% sig)] <- 1
+
+overlap <- cbind(overlap, as.logical(g.geo1))
+colnames(overlap) <- c("GSE35802", "Gu Dataset", "GSE9202")
+
+vennDiagram(overlap)
+
+```
+
 ```{r intersection_option2, echo=FALSE}
 
 g.geo1 <- rep(0, nrow(p2g.geo2))
